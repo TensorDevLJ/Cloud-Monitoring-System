@@ -8,7 +8,6 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List
-from sqlalchemy.orm import Session
 from datetime import datetime
 from app.config import settings
 from app import models
@@ -56,22 +55,22 @@ class AlertService:
             logger.error(f"Failed to send email alert: {e}")
             return False
     
-    def check_cpu_threshold(self, db: Session, instance: models.Instance, cpu_usage: float):
+    async def check_cpu_threshold(self, instance: models.Instance, cpu_usage: float):
         """Check if CPU usage exceeds threshold"""
         threshold = settings.CPU_THRESHOLD
         
         if cpu_usage > threshold:
             # Check if alert already exists
-            existing_alert = db.query(models.Alert).filter(
-                models.Alert.instance_id == instance.id,
+            existing_alert = await models.Alert.find_one(
+                models.Alert.instance_id == str(instance.id),
                 models.Alert.alert_type == "cpu",
                 models.Alert.status == "active"
-            ).first()
+            )
             
             if not existing_alert:
                 # Create new alert
                 alert = models.Alert(
-                    instance_id=instance.id,
+                    instance_id=str(instance.id),
                     alert_type="cpu",
                     metric_name="CPU Usage",
                     threshold_value=threshold,
@@ -79,8 +78,7 @@ class AlertService:
                     severity="critical" if cpu_usage > 90 else "warning",
                     message=f"CPU usage on {instance.name} is {cpu_usage:.2f}%"
                 )
-                db.add(alert)
-                db.commit()
+                await alert.insert()
                 
                 # Send email notification
                 self._send_alert_notification(instance, alert)
@@ -88,24 +86,24 @@ class AlertService:
                 return alert
         else:
             # Resolve existing alerts
-            self._resolve_alerts(db, instance.id, "cpu")
+            await self._resolve_alerts(str(instance.id), "cpu")
         
         return None
     
-    def check_memory_threshold(self, db: Session, instance: models.Instance, memory_usage: float):
+    async def check_memory_threshold(self, instance: models.Instance, memory_usage: float):
         """Check if memory usage exceeds threshold"""
         threshold = settings.MEMORY_THRESHOLD
         
         if memory_usage > threshold:
-            existing_alert = db.query(models.Alert).filter(
-                models.Alert.instance_id == instance.id,
+            existing_alert = await models.Alert.find_one(
+                models.Alert.instance_id == str(instance.id),
                 models.Alert.alert_type == "memory",
                 models.Alert.status == "active"
-            ).first()
+            )
             
             if not existing_alert:
                 alert = models.Alert(
-                    instance_id=instance.id,
+                    instance_id=str(instance.id),
                     alert_type="memory",
                     metric_name="Memory Usage",
                     threshold_value=threshold,
@@ -113,31 +111,30 @@ class AlertService:
                     severity="critical" if memory_usage > 95 else "warning",
                     message=f"Memory usage on {instance.name} is {memory_usage:.2f}%"
                 )
-                db.add(alert)
-                db.commit()
+                await alert.insert()
                 
                 self._send_alert_notification(instance, alert)
                 
                 return alert
         else:
-            self._resolve_alerts(db, instance.id, "memory")
+            await self._resolve_alerts(str(instance.id), "memory")
         
         return None
     
-    def check_disk_threshold(self, db: Session, instance: models.Instance, disk_usage: float):
+    async def check_disk_threshold(self, instance: models.Instance, disk_usage: float):
         """Check if disk usage exceeds threshold"""
         threshold = settings.DISK_THRESHOLD
         
         if disk_usage > threshold:
-            existing_alert = db.query(models.Alert).filter(
-                models.Alert.instance_id == instance.id,
+            existing_alert = await models.Alert.find_one(
+                models.Alert.instance_id == str(instance.id),
                 models.Alert.alert_type == "disk",
                 models.Alert.status == "active"
-            ).first()
+            )
             
             if not existing_alert:
                 alert = models.Alert(
-                    instance_id=instance.id,
+                    instance_id=str(instance.id),
                     alert_type="disk",
                     metric_name="Disk Usage",
                     threshold_value=threshold,
@@ -145,31 +142,28 @@ class AlertService:
                     severity="critical" if disk_usage > 95 else "warning",
                     message=f"Disk usage on {instance.name} is {disk_usage:.2f}%"
                 )
-                db.add(alert)
-                db.commit()
+                await alert.insert()
                 
                 self._send_alert_notification(instance, alert)
                 
                 return alert
         else:
-            self._resolve_alerts(db, instance.id, "disk")
+            await self._resolve_alerts(str(instance.id), "disk")
         
         return None
     
-    def _resolve_alerts(self, db: Session, instance_id: int, alert_type: str):
+    async def _resolve_alerts(self, instance_id: str, alert_type: str):
         """Resolve active alerts of a specific type"""
-        alerts = db.query(models.Alert).filter(
+        alerts = await models.Alert.find(
             models.Alert.instance_id == instance_id,
             models.Alert.alert_type == alert_type,
             models.Alert.status == "active"
-        ).all()
+        ).to_list()
         
         for alert in alerts:
             alert.status = "resolved"
             alert.resolved_at = datetime.utcnow()
-        
-        if alerts:
-            db.commit()
+            await alert.save()
     
     def _send_alert_notification(self, instance: models.Instance, alert: models.Alert):
         """Send notification for alert"""
@@ -195,15 +189,16 @@ class AlertService:
         
         self.send_email_alert(subject, body)
     
-    def get_active_alerts(self, db: Session, instance_id: int = None) -> List[models.Alert]:
+    async def get_active_alerts(self, instance_id: str = None) -> List[models.Alert]:
         """Get active alerts"""
-        query = db.query(models.Alert).filter(models.Alert.status == "active")
+        query = models.Alert.find(models.Alert.status == "active")
         
         if instance_id:
-            query = query.filter(models.Alert.instance_id == instance_id)
+            query = query.find(models.Alert.instance_id == instance_id)
         
-        return query.order_by(models.Alert.triggered_at.desc()).all()
+        return await query.sort(-models.Alert.triggered_at).to_list()
 
 
 # Global alert service instance
 alert_service = AlertService()
+

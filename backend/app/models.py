@@ -1,122 +1,95 @@
 """
-SQLAlchemy database models  model.py
+Beanie database models (MongoDB ODM)
 """
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, JSON
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
-from app.database import Base
+from typing import Optional, Dict, Any
+from datetime import datetime
+# pyrefly: ignore [missing-import]
+from beanie import Document, Indexed
+# pyrefly: ignore [missing-import]
+from pydantic import Field
 
-
-class User(Base):
+class User(Document):
     """User model for authentication"""
-    __tablename__ = "users"
+    # pyrefly: ignore [invalid-annotation]
+    email: Indexed(str, unique=True)
+    # pyrefly: ignore [invalid-annotation]
+    username: Indexed(str, unique=True)
+    hashed_password: str
+    full_name: Optional[str] = None
+    is_active: bool = True
+    is_admin: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    username = Column(String(100), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
-    full_name = Column(String(150))
-    is_active = Column(Boolean, default=True)
-    is_admin = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    class Settings:
+        name = "users"
 
-    # Relationships
-    instances = relationship("Instance", back_populates="owner")
-    alert_configs = relationship("AlertConfig", back_populates="user")
+class Instance(Document):
+    """Instance model"""
+    name: str
+    # pyrefly: ignore [invalid-annotation]
+    instance_id: Indexed(str, unique=True)
+    ip_address: str
+    port: int = 9100
+    region: Optional[str] = None
+    instance_type: Optional[str] = None
+    status: str = "active"
+    is_monitored: bool = True
+    owner_id: str  # Storing the string ID of the User
+    tags: Optional[Dict[str, Any]] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
 
+    class Settings:
+        name = "instances"
 
-class Instance(Base):
-    __tablename__ = "instances"
+class Alert(Document):
+    """Alert model"""
+    instance_id: str  # string ID of Instance
+    alert_type: str
+    metric_name: str
+    threshold_value: float
+    current_value: float
+    severity: str
+    message: str
+    status: str = "active"
+    triggered_at: datetime = Field(default_factory=datetime.utcnow)
+    resolved_at: Optional[datetime] = None
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    instance_id = Column(String(100), unique=True, index=True, nullable=False)
-    ip_address = Column(String(45), nullable=False)
-    port = Column(Integer, default=9100)
-    region = Column(String(50))
-    instance_type = Column(String(50))
-    status = Column(String(20), default="active")
-    is_monitored = Column(Boolean, default=True)
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    tags = Column(JSON)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    class Settings:
+        name = "alerts"
 
-    owner = relationship("User", back_populates="instances")
-    alerts = relationship("Alert", back_populates="instance")
-    metrics_snapshots = relationship("MetricsSnapshot", back_populates="instance")
+class AlertConfig(Document):
+    """Alert Configuration"""
+    user_id: str  # string ID of User
+    alert_type: str
+    threshold: float
+    duration_minutes: int = 5
+    enabled: bool = True
+    notification_email: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class Alert(Base):
-    __tablename__ = "alerts"
+    class Settings:
+        name = "alert_configs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    instance_id = Column(Integer, ForeignKey("instances.id"))
-    alert_type = Column(String(50))
-    metric_name = Column(String(50))
-    threshold_value = Column(Float)
-    current_value = Column(Float)
-    severity = Column(String(20))
-    message = Column(String(255))
-    status = Column(String(20), default="active")
-    triggered_at = Column(DateTime(timezone=True), server_default=func.now())
-    resolved_at = Column(DateTime(timezone=True))
-
-    instance = relationship("Instance", back_populates="alerts")
-
-
-class AlertConfig(Base):
-    __tablename__ = "alert_configs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    alert_type = Column(String(50))
-    threshold = Column(Float)
-    duration_minutes = Column(Integer, default=5)
-    enabled = Column(Boolean, default=True)
-    notification_email = Column(String(255))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    user = relationship("User", back_populates="alert_configs")
-
-# class MetricsSnapshot(Base):
-#     """Store periodic snapshots of metrics for historical analysis"""
-#     __tablename__ = "metrics_snapshots"
-
-#     id = Column(Integer, primary_key=True, index=True)
-#     instance_id = Column(Integer, ForeignKey("instances.id"))
-#     timestamp = Column(DateTime(timezone=True), server_default=func.now())
-#     cpu_usage = Column(Float)
-#     memory_usage = Column(Float)
-#     disk_usage = Column(Float)
-#     network_rx = Column(Float)
-#     network_tx = Column(Float)
-#     load_1min = Column(Float)
-#     load_5min = Column(Float)
-#     load_15min = Column(Float)
-
-
-class MetricsSnapshot(Base):
+class MetricsSnapshot(Document):
     """
-    Metrics snapshot for ML training - ADDED FOR ML FEATURES
-    Stores historical metrics data for machine learning model training
+    Metrics snapshot for ML training - Stores historical metrics data
     """
-    __tablename__ = "metrics_snapshots"
+    instance_id: str  # string ID of Instance
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    cpu_usage: float
+    memory_usage: float
+    disk_usage: float
+    network_rx: float
+    network_tx: float
+    network_rx_errors: float = 0
+    network_tx_errors: float = 0
+    disk_read_bytes: float = 0
+    disk_write_bytes: float = 0
+    load_1min: float
+    load_5min: float
+    load_15min: float
 
-    id = Column(Integer, primary_key=True, index=True)
-    instance_id = Column(Integer, ForeignKey("instances.id"))
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    cpu_usage = Column(Float)
-    memory_usage = Column(Float)
-    disk_usage = Column(Float)
-    network_rx = Column(Float)
-    network_tx = Column(Float)
-    network_rx_errors = Column(Float, default=0)
-    network_tx_errors = Column(Float, default=0)
-    disk_read_bytes = Column(Float, default=0)
-    disk_write_bytes = Column(Float, default=0)
-    load_1min = Column(Float)
-    load_5min = Column(Float)
-    load_15min = Column(Float)
-
-    instance = relationship("Instance", back_populates="metrics_snapshots")
+    class Settings:
+        name = "metrics_snapshots"

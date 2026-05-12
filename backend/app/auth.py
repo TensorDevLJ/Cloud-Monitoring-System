@@ -1,15 +1,19 @@
 """
-JWT Authentication utilities
+JWT Authentication utilities using Beanie
 """
 from datetime import datetime, timedelta
 from typing import Optional
+# pyrefly: ignore [missing-import]
 from jose import JWTError, jwt
+# pyrefly: ignore [missing-import]
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status, Request
+# pyrefly: ignore [missing-import]
+from fastapi import Depends, HTTPException, status
+# pyrefly: ignore [missing-import]
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+# pyrefly: ignore [missing-import]
 from app.config import settings
-from app.database import get_db
+# pyrefly: ignore [missing-import]
 from app import models, schemas
 
 # Password hashing
@@ -32,9 +36,9 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def authenticate_user(db: Session, username: str, password: str):
+async def authenticate_user(username: str, password: str):
     """Authenticate a user"""
-    user = db.query(models.User).filter(models.User.username == username).first()
+    user = await models.User.find_one(models.User.username == username)
     if not user:
         return False
     if not verify_password(password, user.hashed_password):
@@ -55,10 +59,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Get current authenticated user"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -75,7 +76,7 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
     
-    user = db.query(models.User).filter(models.User.username == token_data.username).first()
+    user = await models.User.find_one(models.User.username == token_data.username)
     if user is None:
         raise credentials_exception
     
@@ -104,14 +105,9 @@ async def get_current_admin_user(
 
 
 async def get_optional_current_user(
-    token: Optional[str] = Depends(oauth2_scheme_optional),
-    db: Session = Depends(get_db)
+    token: Optional[str] = Depends(oauth2_scheme_optional)
 ) -> Optional[models.User]:
-    """Get current user if token is provided, otherwise return None.
-    
-    Used for endpoints that should work both with and without authentication,
-    such as metrics and ML endpoints that can be accessed directly via browser URL.
-    """
+    """Get current user if token is provided, otherwise return None."""
     if token is None:
         return None
     
@@ -120,8 +116,7 @@ async def get_optional_current_user(
         username: str = payload.get("sub")
         if username is None:
             return None
-        user = db.query(models.User).filter(models.User.username == username).first()
+        user = await models.User.find_one(models.User.username == username)
         return user
     except JWTError:
         return None
-

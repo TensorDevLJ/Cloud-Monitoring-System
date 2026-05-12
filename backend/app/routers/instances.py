@@ -1,10 +1,10 @@
 """
 Instance management routes
 """
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.database import get_db
+# pyrefly: ignore [missing-import]
 from app import models, schemas, auth
 
 router = APIRouter(prefix="/instances", tags=["Instances"])
@@ -14,54 +14,59 @@ router = APIRouter(prefix="/instances", tags=["Instances"])
 async def list_instances(
     skip: int = 0,
     limit: int = 100,
-    current_user: Optional[models.User] = Depends(auth.get_optional_current_user),
-    db: Session = Depends(get_db)
+    current_user: Optional[models.User] = Depends(auth.get_optional_current_user)
 ):
     """List all instances"""
+    # Just list all instances for now, or filter by user if not admin
     if not current_user or not current_user.is_admin:
-        instances = db.query(models.Instance).offset(skip).limit(limit).all()
+        instances = await models.Instance.find_all().skip(skip).limit(limit).to_list()
     else:
-        instances = db.query(models.Instance).offset(skip).limit(limit).all()
+        instances = await models.Instance.find_all().skip(skip).limit(limit).to_list()
     
+    # Add id string mapping to schema compat
+    for i in instances:
+        i.id = str(i.id)
     return instances
 
 
 @router.get("/{instance_id}", response_model=schemas.Instance)
 async def get_instance(
     instance_id: str,
-    current_user: Optional[models.User] = Depends(auth.get_optional_current_user),
-    db: Session = Depends(get_db)
+    current_user: Optional[models.User] = Depends(auth.get_optional_current_user)
 ):
     """Get instance by ID"""
-    if instance_id.isdigit():
-        instance = db.query(models.Instance).filter(models.Instance.id == int(instance_id)).first()
-    else:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
-    
+    instance = await models.Instance.find_one(models.Instance.instance_id == instance_id)
     if not instance:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
+        # Fallback to mongodb _id if valid
+        try:
+            # pyrefly: ignore [missing-import]
+            from bson import ObjectId
+            if ObjectId.is_valid(instance_id):
+                instance = await models.Instance.get(instance_id)
+        except Exception:
+            pass
         
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
     # Check permissions (only if authenticated)
-    if current_user and not current_user.is_admin and instance.owner_id != current_user.id:
+    if current_user and not current_user.is_admin and instance.owner_id != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    instance.id = str(instance.id)
     return instance
 
 
 @router.post("/", response_model=schemas.Instance, status_code=status.HTTP_201_CREATED)
 async def add_instance(
     instance: schemas.InstanceCreate,
-    current_user: models.User = Depends(auth.get_current_active_user),
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """Add a new instance"""
     # Check if instance already exists
-    existing = db.query(models.Instance).filter(
+    existing = await models.Instance.find_one(
         models.Instance.instance_id == instance.instance_id
-    ).first()
+    )
     
     if existing:
         raise HTTPException(
@@ -72,14 +77,12 @@ async def add_instance(
     # Create new instance
     db_instance = models.Instance(
         **instance.dict(),
-        owner_id=current_user.id,
+        owner_id=str(current_user.id),
         status="active"
     )
     
-    db.add(db_instance)
-    db.commit()
-    db.refresh(db_instance)
-    
+    await db_instance.insert()
+    db_instance.id = str(db_instance.id)
     return db_instance
 
 
@@ -87,23 +90,24 @@ async def add_instance(
 async def update_instance(
     instance_id: str,
     instance_update: schemas.InstanceUpdate,
-    current_user: models.User = Depends(auth.get_current_active_user),
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """Update an instance"""
-    if instance_id.isdigit():
-        instance = db.query(models.Instance).filter(models.Instance.id == int(instance_id)).first()
-    else:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
-        
+    instance = await models.Instance.find_one(models.Instance.instance_id == instance_id)
     if not instance:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
+        try:
+            # pyrefly: ignore [missing-import]
+            from bson import ObjectId
+            if ObjectId.is_valid(instance_id):
+                instance = await models.Instance.get(instance_id)
+        except Exception:
+            pass
         
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
     # Check permissions
-    if not current_user.is_admin and instance.owner_id != current_user.id:
+    if not current_user.is_admin and instance.owner_id != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Update fields
@@ -111,37 +115,35 @@ async def update_instance(
     for field, value in update_data.items():
         setattr(instance, field, value)
     
-    db.commit()
-    db.refresh(instance)
-    
+    await instance.save()
+    instance.id = str(instance.id)
     return instance
 
 
 @router.delete("/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_instance(
     instance_id: str,
-    current_user: models.User = Depends(auth.get_current_active_user),
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """Delete an instance"""
-    if instance_id.isdigit():
-        instance = db.query(models.Instance).filter(models.Instance.id == int(instance_id)).first()
-    else:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
-        
+    instance = await models.Instance.find_one(models.Instance.instance_id == instance_id)
     if not instance:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
+        try:
+            # pyrefly: ignore [missing-import]
+            from bson import ObjectId
+            if ObjectId.is_valid(instance_id):
+                instance = await models.Instance.get(instance_id)
+        except Exception:
+            pass
         
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
     # Check permissions
-    if not current_user.is_admin and instance.owner_id != current_user.id:
+    if not current_user.is_admin and instance.owner_id != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    db.delete(instance)
-    db.commit()
-    
+    await instance.delete()
     return None
 
 
@@ -149,30 +151,34 @@ async def delete_instance(
 async def get_instance_alerts(
     instance_id: str,
     active_only: bool = True,
-    current_user: Optional[models.User] = Depends(auth.get_optional_current_user),
-    db: Session = Depends(get_db)
+    current_user: Optional[models.User] = Depends(auth.get_optional_current_user)
 ):
     """Get alerts for an instance"""
-    if instance_id.isdigit():
-        instance = db.query(models.Instance).filter(models.Instance.id == int(instance_id)).first()
-    else:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
-        
+    instance = await models.Instance.find_one(models.Instance.instance_id == instance_id)
     if not instance:
-        instance = db.query(models.Instance).filter(models.Instance.instance_id == instance_id).first()
+        try:
+            # pyrefly: ignore [missing-import]
+            from bson import ObjectId
+            if ObjectId.is_valid(instance_id):
+                instance = await models.Instance.get(instance_id)
+        except Exception:
+            pass
         
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
     # Check permissions (only if authenticated)
-    if current_user and not current_user.is_admin and instance.owner_id != current_user.id:
+    if current_user and not current_user.is_admin and instance.owner_id != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    query = db.query(models.Alert).filter(models.Alert.instance_id == instance.id)
+    query = models.Alert.find(models.Alert.instance_id == str(instance.id))
     
     if active_only:
-        query = query.filter(models.Alert.status == "active")
+        query = query.find(models.Alert.status == "active")
     
-    alerts = query.order_by(models.Alert.triggered_at.desc()).all()
+    alerts = await query.sort(-models.Alert.triggered_at).to_list()
     
+    for a in alerts:
+        a.id = str(a.id)
+        
     return alerts

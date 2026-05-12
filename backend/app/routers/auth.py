@@ -3,9 +3,8 @@ Authentication routes
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
 from datetime import timedelta
-from app.database import get_db
+from beanie.operators import Or
 from app import models, schemas, auth
 from app.config import settings
 
@@ -13,12 +12,12 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+async def register(user: schemas.UserCreate):
     """Register a new user"""
     # Check if user already exists
-    db_user = db.query(models.User).filter(
-        (models.User.email == user.email) | (models.User.username == user.username)
-    ).first()
+    db_user = await models.User.find_one(
+        Or(models.User.email == user.email, models.User.username == user.username)
+    )
     
     if db_user:
         raise HTTPException(
@@ -36,20 +35,15 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
         is_admin=False  # First user should be manually set as admin in DB
     )
     
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    await db_user.insert()
     
     return db_user
 
 
 @router.post("/login", response_model=schemas.Token)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-):
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """Login and get access token"""
-    user = auth.authenticate_user(db, form_data.username, form_data.password)
+    user = await auth.authenticate_user(form_data.username, form_data.password)
     
     if not user:
         raise HTTPException(
@@ -82,13 +76,11 @@ async def read_users_me(current_user: models.User = Depends(auth.get_current_act
 @router.put("/me", response_model=schemas.User)
 async def update_user_me(
     full_name: str = None,
-    current_user: models.User = Depends(auth.get_current_active_user),
-    db: Session = Depends(get_db)
+    current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """Update current user info"""
     if full_name:
         current_user.full_name = full_name
-        db.commit()
-        db.refresh(current_user)
+        await current_user.save()
     
     return current_user

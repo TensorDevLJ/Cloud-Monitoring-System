@@ -4,12 +4,10 @@
 Prometheus client for querying metrics
 """
 import requests
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from typing import Dict, List, Any
 from app.config import settings
 import logging
 import random
-import time
 
 logger = logging.getLogger(__name__)
 

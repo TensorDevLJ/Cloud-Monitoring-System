@@ -1,27 +1,25 @@
-from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy.orm import Session
-from app.database import SessionLocal
+# pyrefly: ignore [missing-import]
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# pyrefly: ignore [missing-import]
 from app import models
+# pyrefly: ignore [missing-import]
 from app.services.prometheus import prometheus_client
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 
 
-def collect_metrics_job():
+async def collect_metrics_job():
     """
     Collect metrics every minute automatically
     """
-
-    db: Session = SessionLocal()
-
     try:
-        instances = db.query(models.Instance).filter(
-            models.Instance.is_monitored == True
-        ).all()
+        instances = await models.Instance.find(
+            models.Instance.is_monitored == True  # noqa: E712
+        ).to_list()
 
         logger.info(f"Collecting metrics for {len(instances)} instances")
 
@@ -32,7 +30,7 @@ def collect_metrics_job():
             )
 
             snapshot = models.MetricsSnapshot(
-                instance_id=instance.id,
+                instance_id=str(instance.id),
                 cpu_usage=metrics.get("cpu_usage", 0),
                 memory_usage=metrics.get("memory_usage", 0),
                 disk_usage=metrics.get("disk_usage", 0),
@@ -45,17 +43,12 @@ def collect_metrics_job():
                 load_15min=metrics.get("load_15min", 0),
             )
 
-            db.add(snapshot)
-
-        db.commit()
+            await snapshot.insert()
 
         logger.info(f"Metrics collected successfully at {datetime.now()}")
 
     except Exception as e:
         logger.error(f"Scheduler error: {e}")
-
-    finally:
-        db.close()
 
 
 def start_scheduler():

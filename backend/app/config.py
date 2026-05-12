@@ -19,10 +19,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
     # Database
-    # DATABASE_URL: str = "sqlite:///./monitoring.db"
-    DATABASE_URL: str = "mysql+pymysql://root:Likhitha%40123@localhost:3306/cloud_monitor"
-
-    # For PostgreSQL: postgresql://user:password@localhost/dbname
+    DATABASE_URL: str = "mongodb://localhost:27017/cloud_monitor"
     
     # Prometheus
     PROMETHEUS_URL: str = "http://prometheus:9090"

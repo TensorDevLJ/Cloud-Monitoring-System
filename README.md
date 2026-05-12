@@ -13,12 +13,16 @@ A production-grade, end-to-end cloud monitoring system for AWS EC2 instances, bu
 
 
 ### Monitoring Capabilities
-- ✅ **Real-time CPU monitoring** - Per-core and aggregate usage
-- ✅ **Memory tracking** - Total, used, available, swap metrics
-- ✅ **Disk monitoring** - Usage, I/O operations, read/write speeds
-- ✅ **Network metrics** - RX/TX bytes, packets, errors
-- ✅ **System metrics** - Load average, uptime tracking
+- ✅ **Real-time Metrics** - CPU, Memory, Disk, Network, and Load averages
 - ✅ **Multi-instance support** - Monitor multiple EC2 instances simultaneously
+- ✅ **Asynchronous Operations** - Non-blocking data collection and processing
+
+### 🧠 Machine Learning & AI Features
+- ✅ **Anomaly Detection** - Unsupervised ML to detect unusual metric patterns
+- ✅ **Capacity Planning** - Predictive forecasting for resource exhaustion
+- ✅ **Failure Prediction** - Proactive warnings before system failures occur
+- ✅ **Root Cause Analysis** - Automated diagnosis of performance bottlenecks
+- ✅ **Health Scoring** - Dynamic instance health calculation based on ML models
 
 ### Alerting & Notifications
 - ✅ **Threshold-based alerts** - CPU, memory, disk usage thresholds
@@ -102,8 +106,10 @@ A production-grade, end-to-end cloud monitoring system for AWS EC2 instances, bu
 - **Framework**: FastAPI 0.109.0
 - **Authentication**: JWT (python-jose)
 - **Password Hashing**: Bcrypt (passlib)
-- **Database ORM**: SQLAlchemy 2.0.25
-- **Database**: PostgreSQL / SQLite
+- **Database ODM**: Beanie (Motor)
+- **Database**: MongoDB
+- **Machine Learning**: Scikit-learn, NumPy, Pandas
+- **Background Jobs**: APScheduler
 - **API Client**: Requests, aiohttp
 - **Monitoring Client**: Prometheus Python Client
 
@@ -126,7 +132,7 @@ A production-grade, end-to-end cloud monitoring system for AWS EC2 instances, bu
 ### Infrastructure
 - **Containerization**: Docker
 - **Orchestration**: Docker Compose
-- **Database**: PostgreSQL 15
+- **Database**: MongoDB 6.0+
 - **Web Server**: Nginx (production)
 
 ## 📦 Prerequisites
@@ -226,8 +232,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env file
 
-# Run migrations (if using Alembic)
-# alembic upgrade head
+# (No database migrations needed - MongoDB/Beanie handles schemas dynamically)
 
 # Start server
 
@@ -266,8 +271,7 @@ SECRET_KEY=your-super-secret-key-change-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # Database
-DATABASE_URL=postgresql://user:password@postgres:5432/monitoring
-# Or for SQLite: sqlite:///./monitoring.db
+DATABASE_URL=mongodb://localhost:27017/monitoring
 
 # Prometheus
 PROMETHEUS_URL=http://prometheus:9090
@@ -455,13 +459,13 @@ curl http://localhost:9100/metrics
 
 **Issue: Database connection errors**
 ```bash
-# Check PostgreSQL is running
-docker-compose ps postgres
+# Check MongoDB is running
+docker-compose ps mongodb
 
 # Check database logs
-docker-compose logs postgres
+docker-compose logs mongodb
 
-# Verify connection string in .env file
+# Verify connection string (mongodb://...) in .env file
 ```
 
 **Issue: Frontend not loading**

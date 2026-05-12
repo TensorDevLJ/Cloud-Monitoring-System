@@ -23,7 +23,7 @@ class UserLogin(BaseModel):
 
 
 class User(UserBase):
-    id: int
+    id: str
     is_active: bool
     is_admin: bool
     created_at: datetime
@@ -63,10 +63,10 @@ class InstanceUpdate(BaseModel):
 
 
 class Instance(InstanceBase):
-    id: int
+    id: str
     status: str
     is_monitored: bool
-    owner_id: int
+    owner_id: str
     tags: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -134,12 +134,12 @@ class AlertBase(BaseModel):
 
 
 class AlertCreate(AlertBase):
-    instance_id: int
+    instance_id: str
 
 
 class Alert(AlertBase):
-    id: int
-    instance_id: int
+    id: str
+    instance_id: str
     status: str
     triggered_at: datetime
     resolved_at: Optional[datetime] = None
@@ -160,8 +160,8 @@ class AlertConfigCreate(AlertConfigBase):
 
 
 class AlertConfig(AlertConfigBase):
-    id: int
-    user_id: int
+    id: str
+    user_id: str
     enabled: bool
     created_at: datetime
 
