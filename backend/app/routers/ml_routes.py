@@ -53,7 +53,7 @@ async def train_anomaly_detector(
         models.MetricsSnapshot.timestamp >= datetime.utcnow() - timedelta(days=7)
     ).all()
     
-    if len(historical_data) < 100:
+    if len(historical_data) < 10:
         raise HTTPException(status_code=400, detail="Insufficient historical data (need at least 100 samples)")
     
     # Prepare training data
@@ -150,7 +150,7 @@ async def train_cpu_predictor(
         models.MetricsSnapshot.timestamp >= datetime.utcnow() - timedelta(days=7)
     ).all()
     
-    if len(historical_data) < 100:
+    if len(historical_data) < 10:
         raise HTTPException(status_code=400, detail="Insufficient data")
     
     training_data = [{
@@ -181,7 +181,22 @@ async def predict_cpu(
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
-    predictions = cpu_predictor.predict(minutes_ahead=minutes)
+    historical_data = db.query(models.MetricsSnapshot).filter(
+        models.MetricsSnapshot.instance_id == instance.id
+    ).all()
+
+    formatted_data = [
+        {
+            "timestamp": m.timestamp,
+            "cpu_usage": m.cpu_usage
+        }
+        for m in historical_data
+    ]
+
+    predictions = cpu_predictor.predict(
+        formatted_data,
+        minutes_ahead=minutes
+    )
     
     return {
         **predictions,
@@ -213,7 +228,7 @@ async def train_memory_predictor(
         models.MetricsSnapshot.timestamp >= datetime.utcnow() - timedelta(days=7)
     ).all()
     
-    if len(historical_data) < 100:
+    if len(historical_data) < 10:
         raise HTTPException(status_code=400, detail="Insufficient data")
     
     training_data = [{
@@ -244,7 +259,22 @@ async def predict_memory(
     if not instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
-    predictions = memory_predictor.predict(minutes_ahead=minutes)
+    historical_data = db.query(models.MetricsSnapshot).filter(
+        models.MetricsSnapshot.instance_id == instance.id
+    ).all()
+
+    formatted_data = [
+        {
+            "timestamp": m.timestamp,
+            "memory_usage": m.memory_usage
+        }
+        for m in historical_data
+    ]
+
+    predictions = memory_predictor.predict(
+        formatted_data,
+        minutes_ahead=minutes
+    )
     
     return {
         **predictions,
@@ -290,12 +320,12 @@ async def detect_memory_leak(
     }
 
 
-
 @router.get("/health-score/{instance_id}")
 async def get_health_score(
     instance_id: str,
     db: Session = Depends(get_db)
 ):
+    """Get health score for an instance"""
     # Get instance
     instance = db.query(models.Instance).filter(
         models.Instance.instance_id == instance_id
@@ -309,7 +339,7 @@ async def get_health_score(
         models.MetricsSnapshot.instance_id == instance.id
     ).all()
 
-    if len(historical_data) < 50:
+    if len(historical_data) < 10:
         raise HTTPException(status_code=400, detail="Not enough data for ML")
 
     # Get current metrics
@@ -335,6 +365,7 @@ async def get_health_score(
         "instanceId": instance.instance_id,
         "healthScore": result.get("health_score", 0)
     }
+
 
 @router.get("/failure/predict/{instance_id}")
 async def predict_failure(
@@ -376,7 +407,7 @@ async def predict_failure(
         models.MetricsSnapshot.instance_id == instance.id
     ).all()
 
-    if len(historical_data) < 50:
+    if len(historical_data) < 10:
         raise HTTPException(status_code=400, detail="Not enough data for ML")
 
     # ✅ Train model (you can optimize later)
@@ -392,6 +423,7 @@ async def predict_failure(
         "failureProbability": result.get("failure_probability", 0),
         "status": result.get("status", "normal")
     }
+
 
 @router.get("/autoscale/recommend/{instance_id}")
 async def get_autoscale_recommendation(
@@ -461,7 +493,7 @@ async def get_ml_dashboard_summary(
         'memory_usage': memory_metrics.get('usage_percent', 0),
         'disk_usage': disk_metrics.get('usage_percent', 0),
         'network_rx': network_metrics.get('rx_bytes', 0),
-        'network_tx': network_metrics.get('tx_bytes', 0),   # ✅ ADD THIS LINE
+        'network_tx': network_metrics.get('tx_bytes', 0),
         'network_rx_errors': network_metrics.get('rx_errors', 0),
         'network_tx_errors': network_metrics.get('tx_errors', 0),
         'disk_write_bytes': disk_metrics.get('write_bytes', 0),
@@ -473,49 +505,69 @@ async def get_ml_dashboard_summary(
     # Get all ML insights
     anomaly = anomaly_detector.detect(metrics)
     historical_data = db.query(models.MetricsSnapshot).filter(
-          models.MetricsSnapshot.instance_id == instance.id
+        models.MetricsSnapshot.instance_id == instance.id
     ).all()
 
-    if len(historical_data) >= 50:
-         health_model.train(historical_data)
-         failure_model.train(historical_data)
-         health = health_model.predict(metrics)
-         failure = failure_model.predict(metrics)
+    if len(historical_data) >= 10:
+        health_model.train(historical_data)
+        failure_model.train(historical_data)
+        health = health_model.predict(metrics)
+        failure = failure_model.predict(metrics)
     else:
         health = {
             "health_score": 50,
             "status": "insufficient_data"
-    }
+        }
         failure = {
             "failure_probability": 0,
             "status": "insufficient_data"
-    }
+        }
 
     root_cause = root_cause_analyzer.analyze(metrics)
     autoscale = capacity_planner.get_autoscaling_recommendation(metrics)
     
     # Try to get predictions
     try:
-        cpu_pred = cpu_predictor.predict(minutes_ahead=30)
-        memory_pred = memory_predictor.predict(minutes_ahead=30)
+        formatted_cpu_data = [
+            {
+                "timestamp": m.timestamp,
+                "cpu_usage": m.cpu_usage
+            }
+            for m in historical_data
+        ]
+
+        formatted_memory_data = [
+            {
+                "timestamp": m.timestamp,
+                "memory_usage": m.memory_usage
+            }
+            for m in historical_data
+        ]
+
+        cpu_pred = cpu_predictor.predict(
+            formatted_cpu_data,
+            minutes_ahead=30
+        )
+
+        memory_pred = memory_predictor.predict(
+            formatted_memory_data,
+            minutes_ahead=30
+        )
     except:
         cpu_pred = {'predictions': []}
         memory_pred = {'predictions': []}
     
     return {
-    'instanceId': instance.instance_id,
-    'instanceName': instance.name,
-
-    # ✅ IMPORTANT CHANGE (camelCase)
-    'healthScore': health.get('health_score', 0),
-
-    'failureProbability': failure.get('failure_probability', 0),
-    'failureStatus': failure.get('status', 'normal'),
-
-    'anomaly': anomaly.get('is_anomaly', False),
-
-    'cpuPrediction': cpu_pred.get('predictions', [])[:10],
-    'memoryPrediction': memory_pred.get('predictions', [])[:10],
-
-    'timestamp': datetime.now().isoformat()
-}
+        "instanceId": instance.instance_id,
+        "instanceName": instance.name,
+        "healthScore": health.get("health_score", 0),
+        "failureProbability": failure.get("failure_probability", 0),
+        "failureStatus": failure.get("status", "normal"),
+        "anomaly": anomaly.get("is_anomaly", False),
+        "anomalyConfidence": anomaly.get("confidence", 0),
+        "cpuPrediction": cpu_pred.get("predictions", [])[:10],
+        "memoryPrediction": memory_pred.get("predictions", [])[:10],
+        "autoscaleRecommendation": autoscale.get("recommendation", "No recommendation"),
+        "rootCause": root_cause,
+        "timestamp": datetime.now().isoformat()
+    }

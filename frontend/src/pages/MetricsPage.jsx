@@ -90,31 +90,73 @@ const fetchML = useCallback(async () => {
   try {
     setMlLoading(true);
 
-    const res = await mlAPI.getSummary(selectedInstance.instance_id);
+    const res = await mlAPI.getSummary(
+      selectedInstance.instance_id
+    );
+    console.log("FULL ML RESPONSE:", res.data);
 
-    // ✅ FIXED KEYS
+    console.log("ML DATA:", res.data);
+
     if (
-      res.data?.anomaly &&
-      !mlData?.anomaly
+      res.data?.anomaly_detection?.is_anomaly
     ) {
-      toast.error("🚨 Anomaly detected! System unstable");
+      toast.dismiss();
+      toast.error(
+        "🚨 Anomaly detected! System unstable"
+      );
     }
 
     if (
-      res.data?.healthScore < 40 &&
-      (mlData?.healthScore ?? 100) >= 40
+      res.data?.health_score?.health_score < 40
     ) {
-      toast.error("⚠️ System health is critical!");
+      toast.dismiss();
+      toast.error(
+        "⚠️ System health is critical!"
+      );
     }
 
-    setMlData(res.data);
+    setMlData({
+  healthScore:
+  Number(
+    res.data?.health_score?.health_score ??
+    res.data?.healthScore ??
+    0
+  ),
+
+  anomaly:
+    res.data?.anomaly_detection?.is_anomaly ??
+    false,
+
+  failureProbability:
+  Number(
+    res.data?.failure_prediction?.failure_probability ??
+    0
+  ),
+
+  cpuPrediction:
+    res.data?.cpu_prediction ??
+    { predictions: [] },
+
+  memoryPrediction:
+    res.data?.memory_prediction ??
+    { predictions: [] },
+
+  autoscaleRecommendation:
+    res.data?.autoscale?.recommendation ??
+    "No recommendation",
+
+  rootCause:
+    res.data?.root_cause ??
+    {}
+});
+
     setMlLoading(false);
 
   } catch (err) {
     console.error('ML Error:', err);
     setMlLoading(false);
   }
-}, [selectedInstance, mlData]);
+}, [selectedInstance]);
  
 
 const formatPredictionData = (data) => {
@@ -148,7 +190,7 @@ const formatMemoryData = (data) => {
   }
 
   return (
-    <div className="space-y-6 animate-in">
+    <div className="space-y-6 animate-in pt-24">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -309,7 +351,14 @@ const formatMemoryData = (data) => {
       <XAxis dataKey="time" />
       <YAxis width={40} />
       <Tooltip />
-      <Line type="monotone" dataKey="cpu" stroke="#3b82f6" strokeWidth={2} />
+      <Line
+  type="monotone"
+  dataKey="cpu"
+  stroke="#3b82f6"
+  strokeWidth={2}
+  animationDuration={500}
+/>
+      {/* <Line type="monotone" dataKey="cpu" stroke="#3b82f6" strokeWidth={2} /> */}
     </LineChart>
   </ResponsiveContainer>
 </div>
@@ -332,7 +381,13 @@ const formatMemoryData = (data) => {
         <XAxis dataKey="time" />
         <YAxis width={40} />
         <Tooltip />
-        <Line type="monotone" dataKey="memory" stroke="#10b981" strokeWidth={2} />
+       <Line
+  type="monotone"
+  dataKey="memory"
+  stroke="#3b82f6"
+  strokeWidth={2}
+  animationDuration={500}
+/>
       </LineChart>
     </ResponsiveContainer>
   </div>
@@ -356,7 +411,14 @@ const formatMemoryData = (data) => {
         <XAxis dataKey="time" />
         <YAxis width={40} />
         <Tooltip />
-        <Line type="monotone" dataKey="disk" stroke="#f97316" strokeWidth={2} />
+        <Line
+  type="monotone"
+  dataKey="disk"
+  stroke="#f97316"
+  strokeWidth={2}
+  animationDuration={500}
+/>
+        {/* <Line type="monotone" dataKey="disk" stroke="#f97316" strokeWidth={2} /> */}
       </LineChart>
     </ResponsiveContainer>
   </div>
@@ -381,8 +443,22 @@ const formatMemoryData = (data) => {
   tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`} 
 />
         <Tooltip />
-        <Line type="monotone" dataKey="rx" stroke="#8b5cf6" strokeWidth={2} />
-        <Line type="monotone" dataKey="tx" stroke="#ec4899" strokeWidth={2} />
+        <Line
+  type="monotone"
+  dataKey="rx"
+  stroke="#8b5cf6"
+  strokeWidth={2}
+  animationDuration={500}
+/>       
+       <Line
+  type="monotone"
+  dataKey="tx"
+  stroke="#ec4899"
+  strokeWidth={2}
+  animationDuration={500}
+/>
+        {/* <Line type="monotone" dataKey="rx" stroke="#8b5cf6" strokeWidth={2} /> */}
+        {/* <Line type="monotone" dataKey="tx" stroke="#ec4899" strokeWidth={2} /> */}
       </LineChart>
     </ResponsiveContainer>
   </div>
@@ -399,37 +475,59 @@ const formatMemoryData = (data) => {
    
 
   {/* 🔥 HEALTH SCORE */}
+{/* 🔥 HEALTH SCORE */}
 <div className="p-4 rounded-xl bg-white dark:bg-gray-800 shadow-md">
-  <h3 className="font-semibold mb-2">Health Score</h3>
 
-  <div className={`text-3xl font-bold ${
+  <h3 className="font-semibold mb-2">
+    Health Score
+  </h3>
+
+<div
+  className={`text-3xl font-bold ${
     mlData?.healthScore < 40
-      ? 'text-red-500'
-      : 'text-green-500'
-  }`}>
-    {mlData?.healthScore !== undefined
-      ? mlData.healthScore.toFixed(2)
-      : "N/A"}
-  </div>
+  ? 'text-red-500'
+  : mlData?.healthScore < 70
+  ? 'text-yellow-500'
+  : 'text-green-500'
+  }`}
+>
+  {typeof mlData?.healthScore === 'number'
+    ? mlData.healthScore.toFixed(2)
+    : "N/A"}
+</div>
 
   <p className="text-sm mt-1 text-gray-500">
-    Status: {mlData?.healthScore < 40 ? "Critical" : "Healthy"}
+    Status: {
+  mlData?.healthScore < 40
+    ? "Critical"
+    : mlData?.healthScore < 70
+    ? "Warning"
+    : "Healthy"
+}
   </p>
+
 </div>
 
  {/* 🔥 ANOMALY CARD */}
-<div className={`p-4 rounded-xl ${
-  mlData?.anomaly
-    ? 'bg-red-100 border border-red-400'
-    : 'bg-green-100 border border-green-400'
-}`}>
-  <h3 className="font-semibold">Anomaly Status</h3>
-
-  <p className={`text-sm mt-2 ${
+{/* 🔥 ANOMALY CARD */}
+<div
+  className={`p-4 rounded-xl ${
     mlData?.anomaly
-      ? 'text-red-600 font-semibold'
-      : 'text-green-600'
-  }`}>
+      ? 'bg-red-100 border border-red-400'
+      : 'bg-green-100 border border-green-400'
+  }`}
+>
+  <h3 className="font-semibold">
+    Anomaly Status
+  </h3>
+
+  <p
+    className={`text-sm mt-2 ${
+      mlData?.anomaly
+        ? 'text-red-600 font-semibold'
+        : 'text-green-600'
+    }`}
+  >
     {mlData?.anomaly
       ? '⚠️ Anomaly detected'
       : '✅ System is stable'}
@@ -438,19 +536,152 @@ const formatMemoryData = (data) => {
 
 
 {/* 🔥 FAILURE PREDICTION */}
+{/* 🔥 FAILURE PREDICTION */}
 <div className="p-4 rounded-xl bg-white dark:bg-gray-800 shadow-md">
-  <h3 className="font-semibold">Failure Prediction</h3>
 
-  <p className={`text-sm mt-2 ${
-    mlData?.failureProbability > 0.7
-      ? 'text-red-500 font-semibold'
-      : 'text-green-500'
-  }`}>
+  <h3 className="font-semibold">
+    Failure Prediction
+  </h3>
+
+  <p
+    className={`text-sm mt-2 ${
+      mlData?.failureProbability > 70
+  ? 'text-red-500 font-semibold'
+  : mlData?.failureProbability > 40
+  ? 'text-yellow-500 font-semibold'
+  : 'text-green-500'
+    }`}
+  >
     {mlData?.failureProbability !== undefined
-      ? `Failure Risk: ${(mlData.failureProbability * 100).toFixed(1)}%`
+      ? `Failure Risk: ${mlData.failureProbability.toFixed(1)}%`
       : 'N/A'}
   </p>
+
 </div>
+<div className="p-4 rounded-xl bg-white dark:bg-gray-800 shadow-md">
+
+  <h3 className="font-semibold mb-4">
+    CPU Forecast
+  </h3>
+
+  {mlData?.cpuPrediction?.predictions?.length  > 0 ? (
+
+    <ResponsiveContainer width="100%" height={200}>
+
+      <LineChart
+        data={formatPredictionData(
+          mlData.cpuPrediction.predictions
+        )}
+      >
+
+        <XAxis dataKey="time" />
+
+        <YAxis />
+
+        <Tooltip />
+
+        <Line
+          type="monotone"
+          dataKey="cpu"
+          stroke="#3b82f6"
+          strokeWidth={3}
+        />
+
+      </LineChart>
+
+    </ResponsiveContainer>
+
+  ) : (
+
+    <p className="text-gray-500">
+      No CPU prediction available
+    </p>
+
+  )}
+
+</div>
+
+<div className="p-4 rounded-xl bg-white dark:bg-gray-800 shadow-md">
+
+  <h3 className="font-semibold mb-4">
+    Memory Forecast
+  </h3>
+
+  {mlData?.memoryPrediction?.predictions?.length  > 0 ? (
+
+    <ResponsiveContainer width="100%" height={200}>
+
+      <LineChart
+        data={formatMemoryData(
+          mlData.memoryPrediction.predictions
+        )}
+      >
+
+        <XAxis dataKey="time" />
+
+        <YAxis />
+
+        <Tooltip />
+
+        <Line
+          type="monotone"
+          dataKey="memory"
+          stroke="#8b5cf6"
+          strokeWidth={3}
+        />
+
+      </LineChart>
+
+    </ResponsiveContainer>
+
+  ) : (
+
+    <p className="text-gray-500">
+      No memory prediction available
+    </p>
+
+  )}
+
+</div>
+
+
+<div className="p-4 rounded-xl bg-white dark:bg-gray-800 shadow-md">
+
+  <h3 className="font-semibold mb-2">
+    Auto Scaling Recommendation
+  </h3>
+
+  <p className="text-blue-500 font-semibold text-lg">
+    {mlData?.autoscaleRecommendation ||
+      "No recommendation"}
+  </p>
+
+  <p className="text-sm text-gray-500 mt-2">
+    AI infrastructure optimization
+  </p>
+
+</div>
+
+<div className="p-4 rounded-xl bg-white dark:bg-gray-800 shadow-md">
+
+  <h3 className="font-semibold mb-2">
+    Root Cause Analysis
+  </h3>
+
+  <p className="text-lg font-bold text-orange-500">
+    {mlData?.rootCause?.primary_cause?.cause ||
+      "No issue detected"}
+  </p>
+
+  <p className="text-sm text-gray-500 mt-2">
+    {mlData?.rootCause?.summary ||
+      "System stable"}
+  </p>
+
+</div>
+
+
+
 
 </div>
   

@@ -3,28 +3,130 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiServer, FiActivity, FiBell, FiTrendingUp, FiCpu, FiHardDrive } from 'react-icons/fi';
-import { metricsAPI } from '../../services/api';
+import { metricsAPI, instancesAPI, mlAPI } from '../../services/api';
+import HealthScoreCard from './HealthScoreCard';
+import FailurePredictionCard from './FailurePredictionCard';
+// import RootCauseCard from './RootCauseCard';
+import CPUPredictionCard from './CPUPredictionCard';
+import MemoryPredictionCard from './MemoryPredictionCard';
+import AutoScaleCard from './AutoScaleCard';
+import AnomalyCard from './AnomalyCard';
+import AllInsightsPanel from './AllInsightsPanel';
+
+
 
 const Dashboard = () => {
   const [summary, setSummary] = useState(null);
+  const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [health, setHealth] = useState(null);
+const [anomaly, setAnomaly] = useState(null);
+const [failure, setFailure] = useState(null);
+const [autoscale, setAutoscale] = useState(null);
+const [rootCause, setRootCause] = useState(null);
+const [cpuPrediction, setCpuPrediction] = useState(null);
+const [memoryPrediction, setMemoryPrediction] = useState(null);
 
-  useEffect(() => {
-    fetchSummary();
-    const interval = setInterval(fetchSummary, 10000);
-    return () => clearInterval(interval);
-  }, []);
+ useEffect(() => {
 
-  const fetchSummary = async () => {
+  const loadData = async () => {
+
+    await fetchSummary();
+
     try {
-      const response = await metricsAPI.getDashboardSummary();
-      setSummary(response.data);
+
+      const response = await instancesAPI.list();
+
+      setInstances(response.data);
+
+      if (response.data.length > 0) {
+
+        const firstInstanceId =
+          response.data[0].instance_id;
+
+        fetchMLData(firstInstanceId);
+      }
+
     } catch (error) {
-      console.error('Error fetching summary:', error);
-    } finally {
-      setLoading(false);
+      console.error(error);
     }
+
+    setLoading(false);
   };
+
+  loadData();
+
+  const interval = setInterval(loadData, 10000);
+
+  return () => clearInterval(interval);
+
+}, []);
+  const fetchSummary = async () => {
+  try {
+    const response = await metricsAPI.getDashboardSummary();
+    setSummary(response.data);
+  } catch (error) {
+    console.error('Error fetching summary:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+//   const fetchInstances = async () => {
+//   try {
+//     const response = await instancesAPI.list();
+//     setInstances(response.data);
+//   } catch (error) {
+//     console.error('Error fetching instances:', error);
+//   }
+// };
+
+const fetchMLData = async (instanceId) => {
+
+  if (!instanceId) return;
+
+  try {
+
+    const [
+      healthRes,
+      anomalyRes,
+      failureRes,
+      autoscaleRes,
+      cpuRes,
+      memoryRes
+    ] = await Promise.all([
+
+      mlAPI.getHealthScore(instanceId),
+
+      mlAPI.detectAnomaly(instanceId),
+
+      mlAPI.predictFailure(instanceId),
+
+      mlAPI.getAutoscaleRecommendation(instanceId),
+
+      mlAPI.predictCPU(instanceId),
+
+      mlAPI.predictMemory(instanceId)
+
+    ]);
+
+    setHealth(healthRes.data);
+
+    setAnomaly(anomalyRes.data);
+
+    setFailure(failureRes.data);
+
+    setAutoscale(autoscaleRes.data);
+
+    setCpuPrediction(cpuRes.data);
+
+    setMemoryPrediction(memoryRes.data);
+
+  } catch (error) {
+
+    console.error("ML Fetch Error:", error);
+
+  }
+};
 
   if (loading) {
     return (
@@ -33,7 +135,10 @@ const Dashboard = () => {
       </div>
     );
   }
-
+  const currentInstanceId =
+  instances.length > 0
+    ? instances[0].instance_id
+    : null; 
   const stats = [
     {
       label: 'Total Instances',
@@ -104,6 +209,57 @@ const Dashboard = () => {
           </motion.div>
         ))}
       </div>
+{/* ML Features */}
+{/* ML Features */}
+
+<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+  <HealthScoreCard
+    instanceId={currentInstanceId}
+    health={health}
+  />
+
+  <FailurePredictionCard
+    instanceId={currentInstanceId}
+    failure={failure}
+  />
+
+  {/* <RootCauseCard
+    instanceId={currentInstanceId}
+    rootCause={rootCause}
+  /> */}
+
+  <CPUPredictionCard
+    instanceId={currentInstanceId}
+    prediction={cpuPrediction}
+  />
+
+  <MemoryPredictionCard
+    instanceId={currentInstanceId}
+    prediction={memoryPrediction}
+  />
+
+  <AutoScaleCard
+    instanceId={currentInstanceId}
+    autoscale={autoscale}
+  />
+
+  <AnomalyCard
+    instanceId={currentInstanceId}
+    anomaly={anomaly}
+  />
+
+</div>
+
+<AllInsightsPanel
+  health={health}
+  anomaly={anomaly}
+  failure={failure}
+  autoscale={autoscale}
+  rootCause={rootCause}
+  cpuPrediction={cpuPrediction}
+  memoryPrediction={memoryPrediction}
+/>
 
       {/* Additional Info */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
